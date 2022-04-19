@@ -1,7 +1,11 @@
 import cv2
 import numpy as np
-import yolov5.detect as yolo
 
+npzfile = np.load('calibrationdata.npz')
+mtx = npzfile['mtx']
+dist = npzfile['dist']
+rvecs = npzfile['rvecs']
+tvecs = npzfile['tvecs']
 
 def roi_transform(image,ul,ur,ll,lr):
     point_matrix = np.float32([ul, ur, ll, lr])
@@ -25,8 +29,8 @@ def pipeline(image):
     edge = cv2.Canny(blur, 10, 50)
     cv2.imshow('edge', edge)
     cv2.imwrite('out_img/edge_img.jpg', edge)
-    roi_img = roi_transform(edge, [190,140], [450,140], [0,480], [640,480])
-    lane_detx = roi_transform(image, [190,140], [450,140], [0,480], [640,480])
+    roi_img = roi_transform(edge, [159,154], [481,154], [0,480], [640,480])
+    lane_detx = roi_transform(image, [159,154], [481,154], [0,480], [640,480])
     lane_dety = np.copy(lane_detx)
     lane_det = np.copy(lane_detx)
     cv2.imshow('ROI', roi_img)
@@ -34,27 +38,30 @@ def pipeline(image):
     lines = cv2.HoughLinesP(
         roi_img,  # Input edge image
         1,  # Distance resolution in pixels
-        np.pi / 180,  # Angle resolution in radians
-        threshold=150,  # Min number of votes for valid line
-        minLineLength= 50,  # Min allowed length of line
-        maxLineGap= 500  # Max allowed gap between line for joining them
+        np.pi / 150,  # Angle resolution in radians
+        threshold=100,  # Min number of votes for valid line
+        minLineLength= 60,  # Min allowed length of line
+        maxLineGap= 400  # Max allowed gap between line for joining them
     )
-    xmax = 240;
-    xmin = 240;
+    w = roi_img.shape[0]
+    h = roi_img.shape[1]
+    print(w)
+    print(h)
+    xmax = 0
+    xmin = h
     x_lines_max = []
     x_lines_min = []
     x_lines = []
     # Iterate over points
     for points in lines:
         x1, y1, x2, y2 = points[0]
-        if abs(y1 - y2) > 50:
-            if x1 > 20 or x1 < 20:
-                if x1 > xmax:
-                    xmax = x1
-                    x_lines_max = ([x1,y1,x2,y2])
-                elif x1 < xmin:
-                    xmin = x1
-                    x_lines_min = ([x1,y1,x2,y2])
+        if abs(x1 - x2) < 80:
+            if x1 > xmax:
+                xmax = x1
+                x_lines_max = ([x1,y1,x2,y2])
+            elif x1 < xmin:
+                xmin = x1
+                x_lines_min = ([x1,y1,x2,y2])
     if x_lines_max:
         x_lines.append(x_lines_max)
     if x_lines_min:
@@ -70,15 +77,16 @@ def pipeline(image):
         cv2.line(lane_detx, (x1, y1), (x2, y2), (0, 255, 0), 2)
     cv2.imshow("lane detx", lane_detx)
     cv2.imwrite('out_img/lane_detx.jpg', lane_detx)
-    ymax = 320
-    ymin = 320
+    print(x_lines)
+    ymax = 0
+    ymin = w
     y_lines_max =[]
     y_lines_min =[]
     y_lines = []
     for points in lines:
         x1, y1, x2, y2 = points[0]
-        if abs(y1 - y2) < 20:
-            if y1 > 20:
+        if abs(y1 - y2) < 50:
+            if y1 < 580:
                 if y1 > ymax:
                     ymax = y1
                     y_lines_max = ([x1,y1,x2,y2])
@@ -111,9 +119,18 @@ def pipeline(image):
         alpha = 0.4  # Transparency factor.
         # Following line overlays transparent rectangle over the image
         lane_det = cv2.addWeighted(overlay, alpha, lane_det, 1 - alpha, 0)
-        cv2.line(lane_det, (320, 640), (x_oc, 0), (255, 255, 0), 2)
-        angle = np.degrees(np.arctan((abs(320 - x_oc))/640))
-        print("Angle: ", angle)
+        cv2.line(lane_det, (240,640 ), (x_oc, 0), (255, 255, 0), 2)
+        angle = np.degrees(np.arctan((320 - x_oc)/640))
+        print("angle: ", angle)
+    if len(x_lines) == 1:
+        if x_lines[0][0] < 320:
+            angle = 15
+        else:
+            angle = -15
+        print("angle: ", angle)
+    if len(x_lines) == 0:
+        angle = 0
+        print("angle: ", angle)
 
     if len(y_lines) == 2:
         overlay = lane_det.copy()
@@ -121,6 +138,7 @@ def pipeline(image):
                         [y_lines[0][2], y_lines[0][3]]], np.int32)
         pts = pts.reshape((-1, 1, 2))
         overlay=cv2.fillPoly(overlay, pts=[pts], color =(255,255,0))
+        alpha = 0.4
         lane_det = cv2.addWeighted(overlay, alpha, lane_det, 1 - alpha, 0)
     cv2.imshow("lane det", lane_det)
     cv2.imwrite('out_img/lane_det.jpg', lane_det)
@@ -128,24 +146,22 @@ def pipeline(image):
 
 
 
-"""
+
 # define a video capture object
-vid = cv2.VideoCapture(0)
+vid = cv2.VideoCapture(1)
 
 while (True):
 
     # Capture the video frame
     # by frame
     ret, frame = vid.read()
-
+    h, w = frame.shape[:2]
+    newCameraMtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (w, h), 1, (w, h))
+    undistortedImg = cv2.undistort(frame, mtx, dist, None, newCameraMtx)
     # Display the resulting frame
-    pipeline(frame)
-    cv2.imwrite('frame.jpg', frame)
-    yolo.run(source='frame.jpg')
+    pipeline(undistortedImg)
+    cv2.imwrite('frame.jpg', undistortedImg)
 
-    # the 'q' button is set as the
-    # quitting button you may use any
-    # desired button of your choice
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
@@ -157,7 +173,9 @@ cv2.destroyAllWindows()
 import cv2
 img = cv2.imread('sim_lanes_w_car.jpg') # load a dummy image
 while(1):
+    #img = cv2.resize(img, (640,480), interpolation= cv2.INTER_LINEAR)
     pipeline(img)
     k = cv2.waitKey(33)
     if k==27:    # Esc key to stop
         break
+"""
