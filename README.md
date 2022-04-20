@@ -1,1 +1,5 @@
-yuh
+- Lane_det.py is where the full pipeline for lane detection and its outputs is and can be run
+- Detect.py is where you want to run yolov5, and lane_det.py functions are copied into this script as well
+- To run detect.py from camera type: python3.9 detect.py --source 0
+- Currently, pipeline (lane_detection function) is called on im0 (image with no object detection) after its undistorted on line 315
+- The bounding boxes for yolo can be accessed at lines 327 (coordinates for box) and 328 (class of box)
